@@ -11,7 +11,7 @@ Download the repository. You may need to modify the paths of files if you have a
 
 `infinite-sands.sh` - I placed this file in my home directory to start the stable diffusion web UI as a background task in my terminal. `chmod +x infinite-sands.sh` prepares the file for execution.
 
-`infinite-sands.py`, `infinite-sands-api.json`, and `cv_fullscreen.py` should be placed alonmgside each other.
+`infinite-sands.py`, `infinite-sands-api.json`, and `cv_fullscreen.py` should be placed alongside each other.
 
 Installed requirements (there may be others depending upon your environment but these were needed for me):
 ```sh
