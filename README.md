@@ -1,7 +1,7 @@
 # infinite-sands
 Python project utilizing a sandbox for displaying standard diffusion depth mapped art
 
-See the Hackster article for more information: TBD
+See the Hackster article for more information: https://www.hackster.io/sand-command/infinite-sands-df675a
 
 Utilizes the OpenCV FullScreen logic from https://github.com/elerac/fullscreen
 
