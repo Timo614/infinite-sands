@@ -12,7 +12,9 @@ import json
 import base64
 import requests
 from datetime import datetime, timedelta
+import argparse 
 
+# Initialize Whisper model
 model = whisper.load_model("base")
 
 audio_queue = queue.Queue()
@@ -20,17 +22,17 @@ prompt_queue = queue.Queue()
 render_queue = queue.Queue()
 
 # Wake word
-wake_word = "hello" 
+wake_word = "hello"
 
 # Initial prompt
 prompt = "mountains"
-lora_enabled = True
+lora_enabled = False
 
 # Used for Whisper
 samplerate = 16000
 channels = 1
-blocksize = int(samplerate * 1) 
-silence_threshold = 0.1 
+blocksize = int(samplerate * 1)
+silence_threshold = 0.1
 silence_duration = 0.2
 
 # Event to kill threads
@@ -42,6 +44,7 @@ height = None
 width = None
 board_projection = None
 
+
 def check_for_hands(image, mp_hands) -> bool:
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     results = mp_hands.process(image_rgb)
@@ -52,11 +55,13 @@ def check_for_hands(image, mp_hands) -> bool:
     else:
         return False
 
+
 def audio_callback(indata, frames, time, status):
     """Callback function to capture audio and put it in the queue."""
     if status:
         print(status, flush=True)
     audio_queue.put(indata.copy())
+
 
 def process_audio_and_detect_wake_word(stop_event):
     """Detect the wake word and process the audio after detecting it."""
@@ -71,9 +76,10 @@ def process_audio_and_detect_wake_word(stop_event):
             continue
 
         audio_data = np.frombuffer(audio_chunk, dtype=np.float32)
-        result = model.transcribe(audio_data, language='en', condition_on_previous_text = False, no_speech_threshold=0.8, prepend_punctuations="",append_punctuations="")
+        result = model.transcribe(audio_data, language='en', condition_on_previous_text=False, no_speech_threshold=0.8,
+                                  prepend_punctuations="", append_punctuations="")
         text = result['text'].strip().lower()
-        
+
         # Check for wake word
         if wake_word in text:
             print(f"Wake word '{wake_word}' detected!")
@@ -88,33 +94,37 @@ def process_audio_and_detect_wake_word(stop_event):
                     continue
 
                 audio_data = np.frombuffer(audio_chunk, dtype=np.float32)
-                
+
                 # Check if audio is silent
                 if np.max(np.abs(audio_data)) >= silence_threshold:
                     captured_audio.append(audio_data)
-                    silence_start_time = None  
+                    silence_start_time = None
                 else:
                     if silence_start_time is None:
                         silence_start_time = time.time()
                     elif time.time() - silence_start_time >= silence_duration:
-                        if captured_audio: 
+                        if captured_audio:
                             captured_audio = np.concatenate(captured_audio)
                             prompt_message = send_prompt(captured_audio)
                             prompt_queue.put(prompt_message)
                         break
 
-def send_prompt(captured_audio, language='en', condition_on_previous_text=False, no_speech_threshold=0.8, prepend_punctuations="", append_punctuations=""):
+
+def send_prompt(captured_audio, language='en', condition_on_previous_text=False, no_speech_threshold=0.8,
+                prepend_punctuations="", append_punctuations=""):
     """Send the prompt or perform an action."""
-    result = model.transcribe(captured_audio, language=language, condition_on_previous_text=condition_on_previous_text, no_speech_threshold=no_speech_threshold, prepend_punctuations=prepend_punctuations, append_punctuations=append_punctuations)
+    result = model.transcribe(captured_audio, language=language, condition_on_previous_text=condition_on_previous_text,
+                              no_speech_threshold=no_speech_threshold, prepend_punctuations=prepend_punctuations,
+                              append_punctuations=append_punctuations)
     message = result['text'].strip().lower()
-    
+
     # Remove punctuation
     message = message.translate(str.maketrans('', '', string.punctuation))
 
     # Filter out the words "thank" and "you" that are often hallucinated and not needed here
     filtered_words = [word for word in message.split() if word not in ["thank", "you"]]
     filtered_message = " ".join(filtered_words)
-    
+
     print(f"Prompt: {filtered_message}")
     return filtered_message
 
@@ -129,11 +139,11 @@ def calibrate():
     board_projection = board_image
 
     render_queue.put(board_image)
-    
+
     # Allow some time for the board to be displayed before calibration
     print("Displaying calibration board. Waiting for 5 seconds...")
     time.sleep(5)
-    
+
     # Perform calibration
     print("Starting calibration process...")
     cap = cv2.VideoCapture(0)
@@ -151,7 +161,8 @@ def calibrate():
         print("No Charuco corners detected. Calibration failed.")
         return False
 
-    base_charuco_corners, base_charuco_ids, base_marker_corners, base_marker_ids = charucodetector.detectBoard(board_image)
+    base_charuco_corners, base_charuco_ids, base_marker_corners, base_marker_ids = charucodetector.detectBoard(
+        board_image)
 
     if base_charuco_corners is None or len(base_charuco_corners) == 0:
         print("No base Charuco corners detected. Calibration failed.")
@@ -183,9 +194,10 @@ def calibrate():
     print("Calibration complete. Homography matrix: ", H)
     return True
 
+
 def render_queued_image():
     """Render the queued image."""
-    
+
     screen = cv2_fullscreen.FullScreen()
 
     while not stop_event.is_set():
@@ -194,34 +206,35 @@ def render_queued_image():
             screen.imshow(image)
         except queue.Empty:
             continue
-    
+
     screen.destroyWindow()
+
 
 def process_and_render():
     """Process the captured frame and send it to render queue."""
     global should_render
     global prompt
     while not stop_event.is_set():
-        if should_render:            
-            print("Rendering: White screen display and waiting for stabilization...")
+        if should_render:
+            print(f"Enter command (/render, /art, /normal, or a new prompt): Rendering: {prompt}")
             # Set display to white screen
             white_image = np.ones((1080, 1920, 3), dtype=np.uint8) * 255
             render_queue.put(white_image)
-            time.sleep(1) 
+            time.sleep(1)
 
             print("Rendering: Capturing frame from webcam...")
             cap = cv2.VideoCapture(0)
             ret, frame = cap.read()
             if not ret:
                 print("Rendering: Failed to capture frame from webcam.")
-                should_render = False 
+                should_render = False
                 continue
             cap.release()
 
             warped_image = cv2.warpPerspective(frame, H, (width, height))
             retval, buffer = cv2.imencode('.jpg', warped_image)
             base64_image = base64.b64encode(buffer).decode('utf-8')
-            
+
             with open('infinite-sands-api.json') as infile:
                 data = json.load(infile)
 
@@ -229,7 +242,7 @@ def process_and_render():
             # Optionally enable art LoRA
             if lora_enabled:
                 prompt_data += " <lora:kerin-lovett:1>"
-            data['prompt']= prompt_data
+            data['prompt'] = prompt_data
             # ControlNet depth image
             data['alwayson_scripts']['ControlNet']['args'][0]['image']['image'] = base64_image
 
@@ -239,7 +252,7 @@ def process_and_render():
             if response.status_code == 200:
                 print('Request successful.')
                 rendered_image = response.json()['images'][0]
-                
+
                 image_data = base64.b64decode(rendered_image)
                 np_arr = np.frombuffer(image_data, np.uint8)
                 image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
@@ -249,15 +262,27 @@ def process_and_render():
             else:
                 print('Request failed with status code:', response.status_code)
                 print('Response:', response.text)
-            
+
             should_render = False
 
         time.sleep(1)
+
 
 def main():
     global should_render
     global prompt
     global lora_enabled
+    global last_hands_seen
+    global render_triggered
+
+    last_hands_seen = None 
+    render_triggered = False 
+
+    # Add command-line argument parsing for mode selection
+    parser = argparse.ArgumentParser(description="Choose between CLI and Voice Command Mode")
+    parser.add_argument('--mode', type=str, choices=['cli', 'voice'], default='voice',
+                        help="Choose CLI or Voice Command mode.")
+    args = parser.parse_args()
 
     mp_hands = mp.solutions.hands.Hands()
     rendering_thread = threading.Thread(target=render_queued_image)
@@ -272,80 +297,97 @@ def main():
 
     process_thread = threading.Thread(target=process_and_render)
     process_thread.start()
-    stream = sd.InputStream(callback=audio_callback, channels=channels, samplerate=samplerate, blocksize=blocksize)
+
+    stream = None
+    if args.mode == 'voice':
+        stream = sd.InputStream(callback=audio_callback, channels=channels, samplerate=samplerate, blocksize=blocksize)
 
     try:
-        with stream:
-            print("Listening for the wake word...")
+        if stream:
+            with stream:
+                print("Listening for the wake word...")
 
-            processing_thread = threading.Thread(target=process_audio_and_detect_wake_word, args=(stop_event,))
-            processing_thread.daemon = True  
-            processing_thread.start()
+                processing_thread = threading.Thread(target=process_audio_and_detect_wake_word, args=(stop_event,))
+                processing_thread.daemon = True
+                processing_thread.start()
 
-            last_hands_seen = None
-            render_triggered = False
+                run_loop(mp_hands)
 
-            while True:
-                if not prompt_queue.empty():
-                    temp_prompt = prompt_queue.get()
-                    if temp_prompt.lower() == "exit":
-                        print("Exit command received. Exiting...")
-                        stop_event.set()
-                        processing_thread.join()
-                        process_thread.join()
-                        rendering_thread.join()
-                        break
-                    elif temp_prompt.lower() == "render":
-                        should_render = True
-                    elif temp_prompt.lower() == "art":
-                        lora_enabled = True
-                        should_render = True
-                    elif temp_prompt.lower() == "normal":
-                        lora_enabled = False
-                        should_render = True
-                    else:
-                        prompt = temp_prompt
-                        should_render = True
-                elif not should_render:
-                    cap = cv2.VideoCapture(0)
-                    ret, frame = cap.read()
-                    cap.release()
+        elif args.mode == 'cli':
+            run_loop(mp_hands)
 
-                    if not ret:
-                        print("Failed to capture image from camera")
-                        continue
-
-                    hand_frame = cv2.warpPerspective(frame, H, (width, height))
-                    hands_visible = check_for_hands(hand_frame, mp_hands)
-
-                    if hands_visible:
-                        print("hands")
-                        last_hands_seen = datetime.now()
-                        render_triggered = False 
-
-                    if last_hands_seen and datetime.now() - last_hands_seen > timedelta(seconds=2):
-                        if not render_triggered:
-                            should_render = True
-                            render_triggered = True
-                    else:
-                        render_triggered = False
-
-                print(f"Current prompt: {prompt}")
-                time.sleep(1)
     except KeyboardInterrupt:
         print("Keyboard interrupt received. Exiting...")
-        stop_event.set()
-        processing_thread.join()
-        process_thread.join()
-        rendering_thread.join()
-
     except Exception as e:
         print(f"An error occurred: {e}")
-        stop_event.set()
-        processing_thread.join()
-        process_thread.join()
-        rendering_thread.join()
+
+    if stream:
+        stream.close()
+
+
+def run_loop(mp_hands):
+    """Unified loop for both CLI and Voice mode, with hand detection and rerendering."""
+    global should_render
+
+    while True:
+        if not prompt_queue.empty():
+            temp_prompt = prompt_queue.get()
+            handle_prompt(temp_prompt)
+        elif not should_render:
+            handle_hand_detection(mp_hands)
+
+        time.sleep(1)
+
+
+def handle_prompt(temp_prompt):
+    global should_render
+    global lora_enabled
+    global prompt
+
+    if temp_prompt == "/render":
+        should_render = True
+    elif temp_prompt == "/art":
+        lora_enabled = True
+        should_render = True
+    elif temp_prompt == "/normal":
+        lora_enabled = False
+        should_render = True
+    else:
+        prompt = temp_prompt
+        should_render = True
+
+
+def handle_hand_detection(mp_hands):
+    global last_hands_seen
+    global render_triggered
+    global should_render
+
+    cap = cv2.VideoCapture(0)
+    ret, frame = cap.read()
+    cap.release()
+
+    if not ret:
+        print("Failed to capture image from camera")
+        return
+
+    hand_frame = cv2.warpPerspective(frame, H, (width, height))
+    hands_visible = check_for_hands(hand_frame, mp_hands)
+
+    # If hands are detected, update `last_hands_seen` and reset rendering trigger
+    if hands_visible:
+        print("Hands detected")
+        last_hands_seen = datetime.now()
+        render_triggered = False 
+    else:
+        print("No hands detected")
+        # If it's been more than 2 seconds since hands were last seen and rerender hasn't happened yet
+        if last_hands_seen and (datetime.now() - last_hands_seen) > timedelta(seconds=2) and not render_triggered:
+            print("Triggering rerender after hands have been gone for more than 2 seconds.")
+            should_render = True
+            render_triggered = True  # Prevent further rerender until hands reappear
+        else:
+            should_render = False  # No rerender if hands haven't been gone for 2 seconds yet
+
 
 if __name__ == "__main__":
     main()
-
