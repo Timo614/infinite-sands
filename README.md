@@ -7,6 +7,8 @@ Utilizes the OpenCV FullScreen logic from https://github.com/elerac/fullscreen
 
 ## Setup
 
+Prerequisite: The code here has been updated to use ROCM 6.2 while the initial Hackster project used 6.1. Utilize 6.2 when installing this version for maximum compatibility otherwise scripts and logic will need to be updated to reference the earlier ROCM version.
+
 Download the repository. You may need to modify the paths of files if you have a setup that is different from my own. 
 
 `infinite-sands.sh` - I placed this file in my home directory to start the stable diffusion web UI as a background task in my terminal. `chmod +x infinite-sands.sh` prepares the file for execution.
