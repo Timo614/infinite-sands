@@ -268,6 +268,75 @@ def process_and_render():
         time.sleep(1)
 
 
+def run_loop(mp_hands, mode):
+    """Unified loop for both CLI and Voice mode, with hand detection and rerendering."""
+    global should_render
+
+    if mode == 'cli':
+        # Run CLI mode where we listen for user input and handle commands, while also detecting hands
+        while not stop_event.is_set():
+            try:
+                if not prompt_queue.empty():
+                    # Process any queued prompts from CLI input or other sources
+                    temp_prompt = prompt_queue.get()
+                    handle_prompt(temp_prompt)
+
+                # Handle hand detection for rerendering
+                handle_hand_detection(mp_hands)
+
+                # Non-blocking CLI input
+                user_input = input("Enter command (/render, /art, /normal, or a new prompt): ").strip()
+                if user_input:
+                    prompt_queue.put(user_input)  # Queue the user input to be processed
+
+            except (KeyboardInterrupt, EOFError):
+                print("Exiting CLI mode...")
+                stop_event.set()  # Stop the event to safely exit all threads
+                break
+
+        time.sleep(0.1)
+
+    else:
+        # In voice mode, we detect hand gestures for rerendering
+        while not stop_event.is_set():
+            if not prompt_queue.empty():
+                temp_prompt = prompt_queue.get()
+                handle_prompt(temp_prompt)
+            else:
+                handle_hand_detection(mp_hands)
+
+            time.sleep(1)
+
+
+def handle_hand_detection(mp_hands):
+    """Detect hands and trigger rerendering if hands are detected or leave, without printing any messages."""
+    global last_hands_seen
+    global render_triggered
+    global should_render
+
+    cap = cv2.VideoCapture(0)
+    ret, frame = cap.read()
+    cap.release()
+
+    if not ret:
+        return
+
+    hand_frame = cv2.warpPerspective(frame, H, (width, height))
+    hands_visible = check_for_hands(hand_frame, mp_hands)
+
+    # If hands are detected, update `last_hands_seen` and reset rendering trigger
+    if hands_visible:
+        last_hands_seen = datetime.now()
+        render_triggered = False
+    else:
+        # If it's been more than 2 seconds since hands were last seen and rerender hasn't happened yet
+        if last_hands_seen and (datetime.now() - last_hands_seen) > timedelta(seconds=2) and not render_triggered:
+            should_render = True
+            render_triggered = True  # Prevent further rerender until hands reappear
+        else:
+            should_render = False  # No rerender if hands haven't been gone for 2 seconds yet
+
+
 def main():
     global should_render
     global prompt
@@ -275,8 +344,8 @@ def main():
     global last_hands_seen
     global render_triggered
 
-    last_hands_seen = None 
-    render_triggered = False 
+    last_hands_seen = None
+    render_triggered = False
 
     # Add command-line argument parsing for mode selection
     parser = argparse.ArgumentParser(description="Choose between CLI and Voice Command Mode")
@@ -311,32 +380,19 @@ def main():
                 processing_thread.daemon = True
                 processing_thread.start()
 
-                run_loop(mp_hands)
+                run_loop(mp_hands, mode=args.mode)
 
         elif args.mode == 'cli':
-            run_loop(mp_hands)
+            run_loop(mp_hands, mode=args.mode)
 
     except KeyboardInterrupt:
         print("Keyboard interrupt received. Exiting...")
+        stop_event.set()  # Trigger the stop event to cleanly exit all threads
     except Exception as e:
         print(f"An error occurred: {e}")
 
     if stream:
         stream.close()
-
-
-def run_loop(mp_hands):
-    """Unified loop for both CLI and Voice mode, with hand detection and rerendering."""
-    global should_render
-
-    while True:
-        if not prompt_queue.empty():
-            temp_prompt = prompt_queue.get()
-            handle_prompt(temp_prompt)
-        elif not should_render:
-            handle_hand_detection(mp_hands)
-
-        time.sleep(1)
 
 
 def handle_prompt(temp_prompt):
@@ -355,38 +411,6 @@ def handle_prompt(temp_prompt):
     else:
         prompt = temp_prompt
         should_render = True
-
-
-def handle_hand_detection(mp_hands):
-    global last_hands_seen
-    global render_triggered
-    global should_render
-
-    cap = cv2.VideoCapture(0)
-    ret, frame = cap.read()
-    cap.release()
-
-    if not ret:
-        print("Failed to capture image from camera")
-        return
-
-    hand_frame = cv2.warpPerspective(frame, H, (width, height))
-    hands_visible = check_for_hands(hand_frame, mp_hands)
-
-    # If hands are detected, update `last_hands_seen` and reset rendering trigger
-    if hands_visible:
-        print("Hands detected")
-        last_hands_seen = datetime.now()
-        render_triggered = False 
-    else:
-        print("No hands detected")
-        # If it's been more than 2 seconds since hands were last seen and rerender hasn't happened yet
-        if last_hands_seen and (datetime.now() - last_hands_seen) > timedelta(seconds=2) and not render_triggered:
-            print("Triggering rerender after hands have been gone for more than 2 seconds.")
-            should_render = True
-            render_triggered = True  # Prevent further rerender until hands reappear
-        else:
-            should_render = False  # No rerender if hands haven't been gone for 2 seconds yet
 
 
 if __name__ == "__main__":
