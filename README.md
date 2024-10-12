@@ -29,6 +29,10 @@ Go to section: `/org/gnome/mutter/`
 Modify key `check-alive-timeout`
 Override default with a large number
 
+### Note About ControlNet
+
+After installing the ControlNet extension to use this project's existing json without modifications you will need to download the model diff_control_sd15_depth_fp16 which can be found [here](https://huggingface.co/kohya-ss/ControlNet-diff-modules/blob/main/diff_control_sd15_depth_fp16.safetensors). Alternatively a separate depth ControlNet model can be used but it will require an update to the json.
+
 ### Install requirements
 Installed requirements (there may be others depending upon your environment but these were needed for me):
 ```sh
@@ -76,3 +80,4 @@ The `test-files` directory contains several test related pieces of code used dur
 - Whisper: [MIT License](https://github.com/openai/whisper/blob/main/LICENSE)
 - Stable Diffusion 1.5:  [CreativeML Open RAIL-M License](https://github.com/CompVis/stable-diffusion/blob/main/LICENSE)
 - DepthAnythingV2 Large: [CC-BY-NC-4.0](https://github.com/DepthAnything/Depth-Anything-V2/blob/main/README.md)
+- ControlNet: [Apache License](https://github.com/lllyasviel/ControlNet/blob/main/LICENSE)

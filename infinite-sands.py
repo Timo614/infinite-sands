@@ -267,6 +267,27 @@ def process_and_render():
 
         time.sleep(1)
 
+def run_loop(mp_hands):
+    """Unified loop for both CLI and Voice mode, with hand detection and rerendering."""
+    global should_render
+
+    while not stop_event.is_set():
+        if not prompt_queue.empty():
+            temp_prompt = prompt_queue.get()
+            handle_prompt(temp_prompt)
+        elif not should_render:
+            handle_hand_detection(mp_hands)
+
+        time.sleep(1)
+
+
+def cli_input_thread():
+    """Thread to handle CLI input."""
+    while not stop_event.is_set():
+        user_input = input("Enter command (/render, /art, /normal, or a new prompt): ").strip()
+        if user_input:
+            prompt_queue.put(user_input)  # Queue the user input to be processed
+
 
 def main():
     global should_render
@@ -275,8 +296,8 @@ def main():
     global last_hands_seen
     global render_triggered
 
-    last_hands_seen = None 
-    render_triggered = False 
+    last_hands_seen = None
+    render_triggered = False
 
     # Add command-line argument parsing for mode selection
     parser = argparse.ArgumentParser(description="Choose between CLI and Voice Command Mode")
@@ -298,12 +319,16 @@ def main():
     process_thread = threading.Thread(target=process_and_render)
     process_thread.start()
 
-    stream = None
-    if args.mode == 'voice':
-        stream = sd.InputStream(callback=audio_callback, channels=channels, samplerate=samplerate, blocksize=blocksize)
+    # Start CLI input thread in CLI mode
+    if args.mode == 'cli':
+        input_thread = threading.Thread(target=cli_input_thread)
+        input_thread.daemon = True  # Ensure it doesn't block the main thread on exit
+        input_thread.start()
 
+    # Start the main loop
     try:
-        if stream:
+        if args.mode == 'voice':
+            stream = sd.InputStream(callback=audio_callback, channels=channels, samplerate=samplerate, blocksize=blocksize)
             with stream:
                 print("Listening for the wake word...")
 
@@ -312,31 +337,17 @@ def main():
                 processing_thread.start()
 
                 run_loop(mp_hands)
-
-        elif args.mode == 'cli':
+        else:
             run_loop(mp_hands)
 
     except KeyboardInterrupt:
         print("Keyboard interrupt received. Exiting...")
+        stop_event.set()  # Trigger the stop event to cleanly exit all threads
     except Exception as e:
         print(f"An error occurred: {e}")
 
     if stream:
         stream.close()
-
-
-def run_loop(mp_hands):
-    """Unified loop for both CLI and Voice mode, with hand detection and rerendering."""
-    global should_render
-
-    while True:
-        if not prompt_queue.empty():
-            temp_prompt = prompt_queue.get()
-            handle_prompt(temp_prompt)
-        elif not should_render:
-            handle_hand_detection(mp_hands)
-
-        time.sleep(1)
 
 
 def handle_prompt(temp_prompt):
